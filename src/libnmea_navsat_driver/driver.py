@@ -39,6 +39,7 @@ from geometry_msgs.msg import TwistStamped
 
 from libnmea_navsat_driver.checksum_utils import check_nmea_checksum
 import libnmea_navsat_driver.parser
+from std_msgs.msg import String
 
 
 class RosNMEADriver(object):
@@ -46,6 +47,13 @@ class RosNMEADriver(object):
         self.fix_pub = rospy.Publisher('fix', NavSatFix, queue_size=1)
         self.vel_pub = rospy.Publisher('vel', TwistStamped, queue_size=1)
         self.time_ref_pub = rospy.Publisher('time_reference', TimeReference, queue_size=1)
+
+        self.RMC_sentence_pub = rospy.Publisher('RMC_sentence', String, queue_size=1)
+        self.GGA_sentence_pub = rospy.Publisher('GGA_sentence', String, queue_size=1)
+        self.GSA_sentence_pub = rospy.Publisher('GSA_sentence', String, queue_size=1)
+        self.GSV_sentence_pub = rospy.Publisher('GSV_sentence', String, queue_size=1)
+        self.GST_sentence_pub = rospy.Publisher('GST_sentence', String, queue_size=1)
+        self.VTG_sentence_pub = rospy.Publisher('VTG_sentence', String, queue_size=1)
 
         self.time_ref_source = rospy.get_param('~time_ref_source', None)
         self.use_RMC = rospy.get_param('~useRMC', False)
@@ -57,11 +65,23 @@ class RosNMEADriver(object):
             rospy.logwarn("Received a sentence with an invalid checksum. " +
                           "Sentence was: %s" % repr(nmea_string))
             return False
-
         parsed_sentence = libnmea_navsat_driver.parser.parse_nmea_sentence(nmea_string)
         if not parsed_sentence:
             rospy.logdebug("Failed to parse NMEA sentence. Sentece was: %s" % nmea_string)
             return False
+
+        if nmea_string[3:6] == "RMC":
+            self.RMC_sentence_pub.publish(nmea_string)
+        elif nmea_string[3:6] == "GGA":
+            self.GGA_sentence_pub.publish(nmea_string)
+        elif nmea_string[3:6] == "GSA":
+            self.GSA_sentence_pub.publish(nmea_string)
+        elif nmea_string[3:6] == "GSV":
+            self.GSV_sentence_pub.publish(nmea_string)
+        elif nmea_string[3:6] == "GST":
+            self.GST_sentence_pub.publish(nmea_string)
+        elif nmea_string[3:6] == "VTG":
+            self.VTG_sentence_pub.publish(nmea_string)
 
         if timestamp:
             current_time = timestamp
