@@ -5,7 +5,7 @@ import rospy
 import libnmea_navsat_driver.driver
 
 if __name__ == '__main__':
-    rospy.init_node('nmea_serial_driver')
+    rospy.init_node('nmea_tcp_driver')
 
     tcp_port = rospy.get_param('~tcp_port', 8000)
     tcp_ip = rospy.get_param('~tcp_ip', '192.168.42.1')
