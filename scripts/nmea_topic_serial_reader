@@ -37,7 +37,7 @@ import serial
 import rospy
 
 from nmea_msgs.msg import Sentence
-from libnmea_navsat_driver.driver import RosNMEADriver
+import libnmea_navsat_driver.driver
 
 if __name__ == '__main__':
     rospy.init_node('nmea_topic_serial_reader')
@@ -47,12 +47,17 @@ if __name__ == '__main__':
     serial_port = rospy.get_param('~port','/dev/ttyACM0')
     serial_baud = rospy.get_param('~baud',115200)
     # Get the frame_id
-    frame_id = RosNMEADriver.get_frame_id()
+    frame_id = libnmea_navsat_driver.driver.RosNMEADriver.get_frame_id()
 
     try:
         GPS = serial.Serial(port=serial_port, baudrate=serial_baud, timeout=2)
+        driver = libnmea_navsat_driver.driver.RosNMEADriver()
         while not rospy.is_shutdown():
             data = GPS.readline().strip()
+            try:
+                driver.add_sentence(data, frame_id)
+            except ValueError as e:
+                rospy.logwarn("Value error, likely due to missing fields in the NMEA message. Error was: %s. Please report this issue at github.com/ros-drivers/nmea_navsat_driver, including a bag file with the NMEA sentences that caused it." % e)
 
             sentence = Sentence()
             sentence.header.stamp = rospy.get_rostime()
