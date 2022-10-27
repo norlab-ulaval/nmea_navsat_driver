@@ -56,11 +56,14 @@ def main(args=None):
         try:
             while rclpy.ok():
                 data = GPS.readline().strip()
+                data = data.decode('utf-8')
+                #driver.get_logger().error(data)
 
                 sentence = Sentence()
                 sentence.header.stamp = driver.get_clock().now().to_msg()
                 sentence.header.frame_id = frame_id
                 sentence.sentence = data
+                #TODO: VALIDATE that this works if we get 
                 nmea_pub.publish(sentence)
 
         except Exception as e:

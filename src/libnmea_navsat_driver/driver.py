@@ -205,6 +205,10 @@ class Ros2NMEADriver(Node):
                 current_vel = TwistStamped()
                 current_vel.header.stamp = current_time
                 current_vel.header.frame_id = frame_id
+                speed_x = data['speed'] * math.sin(data['true_course'])
+                self.get_logger().warn(str(data['speed']))
+                self.get_logger().warn(str(data['true_course']))
+                self.get_logger().warn(str(speed_x))
                 current_vel.twist.linear.x = data['speed'] * math.sin(data['true_course'])
                 current_vel.twist.linear.y = data['speed'] * math.cos(data['true_course'])
                 self.vel_pub.publish(current_vel)
@@ -246,6 +250,13 @@ class Ros2NMEADriver(Node):
                 current_vel = TwistStamped()
                 current_vel.header.stamp = current_time
                 current_vel.header.frame_id = frame_id
+                ##DEBUG =====
+                #speed_x = data['speed'] * math.sin(data['true_course'])
+                #self.get_logger().warn(str(data['speed']))
+                #self.get_logger().warn(str(data['true_course']))
+                #self.get_logger().warn(str(speed_x))
+                # ====
+                #TODO : Validate that the node is stable when having proper signal
                 current_vel.twist.linear.x = data['speed'] * math.sin(data['true_course'])
                 current_vel.twist.linear.y = data['speed'] * math.cos(data['true_course'])
                 self.vel_pub.publish(current_vel)
