@@ -47,7 +47,9 @@ def nmea_sentence_callback(nmea_sentence, driver):
         driver.get_logger().warn(
             "Value error, likely due to missing fields in the NMEA message. Error was: %s. "
             "Please report this issue at github.com/ros-drivers/nmea_navsat_driver, including a bag file with "
-            "the NMEA sentences that caused it." % e)
+            "the NMEA sentences that caused it." % e,
+            # Receivers stream empty sentences until they get a fix.
+            throttle_duration_sec=10.0)
 
 
 def main(args=None):
