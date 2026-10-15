@@ -36,6 +36,26 @@ from nmea_msgs.msg import Sentence
 import rclpy
 
 from libnmea_navsat_driver.driver import Ros2NMEADriver
+from libnmea_navsat_driver.checksum_utils import check_nmea_checksum
+from libnmea_navsat_driver.gnss_clock import ChronySock, GnssClock
+from libnmea_navsat_driver import parser
+
+
+def feed_chrony(chrony, gnss_clock, data, receive_time, logger):
+    """Send the GNSS time of each valid RMC to chrony, with its receive time."""
+    if 'RMC' not in data or not check_nmea_checksum(data):
+        return
+    parsed = parser.parse_nmea_sentence(data)
+    if not parsed or 'RMC' not in parsed:
+        return
+    gnss_time = gnss_clock.update(parsed)
+    if gnss_time is None:
+        return
+    try:
+        chrony.send(receive_time, gnss_time)
+    except OSError as e:
+        logger.warn("Can't send GNSS time to chrony at %s: %s" % (chrony.path, e),
+                    throttle_duration_sec=60.0)
 
 
 def main(args=None):
@@ -47,6 +67,10 @@ def main(args=None):
 
     serial_port = driver.declare_parameter('port', '/dev/ttyUSB0').value
     serial_baud = driver.declare_parameter('baud', 4800).value
+    # chrony `refclock SOCK` socket to feed the GNSS time to; "" disables.
+    chrony_socket = driver.declare_parameter('chrony_socket', '').value
+    chrony = ChronySock(chrony_socket) if chrony_socket else None
+    gnss_clock = GnssClock()
 
     # Get the frame_id
     frame_id = driver.get_frame_id()
@@ -59,8 +83,13 @@ def main(args=None):
                 data = data.decode('utf-8')
                 #driver.get_logger().error(data)
 
+                now = driver.get_clock().now()
+                if chrony:
+                    feed_chrony(chrony, gnss_clock, data, now.nanoseconds * 1e-9,
+                                driver.get_logger())
+
                 sentence = Sentence()
-                sentence.header.stamp = driver.get_clock().now().to_msg()
+                sentence.header.stamp = now.to_msg()
                 sentence.header.frame_id = frame_id
                 sentence.sentence = data
                 #TODO: VALIDATE that this works if we get 

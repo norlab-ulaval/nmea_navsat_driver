@@ -79,6 +79,22 @@ def convert_time(nmea_utc):
         return unix_time
 
 
+def convert_time_of_day(nmea_utc):
+    """hhmmss.ss -> seconds since UTC midnight, keeping the fraction. NaN if empty."""
+    try:
+        return int(nmea_utc[0:2]) * 3600 + int(nmea_utc[2:4]) * 60 + float(nmea_utc[4:])
+    except ValueError:
+        return float('NaN')
+
+
+def convert_date(ddmmyy):
+    """RMC date ddmmyy -> (year, month, day), or None if empty."""
+    try:
+        return (2000 + int(ddmmyy[4:6]), int(ddmmyy[2:4]), int(ddmmyy[0:2]))
+    except ValueError:
+        return None
+
+
 def convert_status_flag(status_flag):
     if status_flag == "A":
         return True
@@ -112,9 +128,12 @@ parse_maps = {
         ("hdop", safe_float, 8),
         ("num_satellites", safe_int, 7),
         ("utc_time", convert_time, 1),
+        ("utc_tod", convert_time_of_day, 1),
     ],
     "RMC": [
         ("utc_time", convert_time, 1),
+        ("utc_tod", convert_time_of_day, 1),
+        ("date", convert_date, 9),
         ("fix_valid", convert_status_flag, 2),
         ("latitude", convert_latitude, 3),
         ("latitude_direction", str, 4),
@@ -132,6 +151,12 @@ parse_maps = {
         ("lat_std_dev", safe_float, 6),
         ("lon_std_dev", safe_float, 7),
         ("alt_std_dev", safe_float, 8),
+    ],
+    "ZDA": [
+        ("utc_tod", convert_time_of_day, 1),
+        ("day", safe_int, 2),
+        ("month", safe_int, 3),
+        ("year", safe_int, 4),
     ],
     "HDT": [
         ("heading", safe_float, 1),

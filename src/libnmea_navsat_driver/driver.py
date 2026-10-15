@@ -40,6 +40,11 @@ from geometry_msgs.msg import TwistStamped, QuaternionStamped
 from tf_transformations import quaternion_from_euler
 from libnmea_navsat_driver.checksum_utils import check_nmea_checksum
 from libnmea_navsat_driver import parser
+from libnmea_navsat_driver.gnss_clock import GnssClock
+
+# Sentences of one fix epoch arrive in a burst of a few ms; sentences without
+# a time (VTG, HDT) get the time of the burst they arrived in.
+EPOCH_BURST_S = 0.05
 
 
 class Ros2NMEADriver(Node):
@@ -53,6 +58,14 @@ class Ros2NMEADriver(Node):
 
         self.time_ref_source = self.declare_parameter('time_ref_source', 'gps').value
         self.use_RMC = self.declare_parameter('useRMC', False).value
+        # "device": stamp messages with the GNSS time of the fix epoch, when
+        # it is known and within gnss_time_tolerance of the host receive
+        # time (else host time). "host": host receive time.
+        self.time_source = self.declare_parameter('time_source', 'host').value
+        self.gnss_time_tolerance = self.declare_parameter('gnss_time_tolerance', 0.5).value
+        self.gnss_clock = GnssClock()
+        self.epoch = None  # (GNSS time, host receive time) of the last fix epoch
+        self.stamp_source = None
         self.valid_fix = False
 
         # epe = estimated position error
@@ -131,21 +144,14 @@ class Ros2NMEADriver(Node):
             return False
 
         if timestamp:
-            current_time = timestamp
+            host_time = timestamp
         else:
-            current_time = self.get_clock().now().to_msg()
+            host_time = self.get_clock().now().to_msg()
+        current_time = self.stamp(parsed_sentence, host_time, frame_id)
 
         current_fix = NavSatFix()
         current_fix.header.stamp = current_time
         current_fix.header.frame_id = frame_id
-        current_time_ref = TimeReference()
-        current_time_ref.header.stamp = current_time
-        current_time_ref.header.frame_id = frame_id
-        if self.time_ref_source:
-            current_time_ref.source = self.time_ref_source
-        else:
-            current_time_ref.source = frame_id
-
         if not self.use_RMC and 'GGA' in parsed_sentence:
             current_fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_APPROXIMATED
 
@@ -192,11 +198,6 @@ class Ros2NMEADriver(Node):
 
             self.fix_pub.publish(current_fix)
 
-            if not math.isnan(data['utc_time']):
-                current_time_ref.time_ref = rclpy.time.Time(seconds=data['utc_time']).to_msg()
-                self.last_valid_fix_time = current_time_ref
-                self.time_ref_pub.publish(current_time_ref)
-
         elif not self.use_RMC and 'VTG' in parsed_sentence:
             data = parsed_sentence['VTG']
 
@@ -237,10 +238,6 @@ class Ros2NMEADriver(Node):
 
                 self.fix_pub.publish(current_fix)
 
-                if not math.isnan(data['utc_time']):
-                    current_time_ref.time_ref = rclpy.time.Time(seconds=data['utc_time']).to_msg()
-                    self.time_ref_pub.publish(current_time_ref)
-
             # Publish velocity from RMC regardless, since GGA doesn't provide it.
             if data['fix_valid']:
                 current_vel = TwistStamped()
@@ -279,6 +276,41 @@ class Ros2NMEADriver(Node):
         else:
             return False
         return True
+
+    def stamp(self, parsed_sentence, host_time, frame_id):
+        """Return the header stamp for this sentence and publish time_reference.
+
+        time_reference is published once per fix epoch: header.stamp is the
+        host receive time, time_ref the GNSS time of the epoch.
+        """
+        host_s = rclpy.time.Time.from_msg(host_time).nanoseconds * 1e-9
+        gnss_s = self.gnss_clock.update(parsed_sentence)
+        if gnss_s is not None:
+            if self.epoch is None or gnss_s != self.epoch[0]:
+                time_ref = TimeReference()
+                time_ref.header.stamp = host_time
+                time_ref.header.frame_id = frame_id
+                time_ref.source = self.time_ref_source or frame_id
+                time_ref.time_ref = rclpy.time.Time(seconds=gnss_s).to_msg()
+                self.time_ref_pub.publish(time_ref)
+            self.epoch = (gnss_s, host_s)
+        elif self.epoch is not None and 0 <= host_s - self.epoch[1] < EPOCH_BURST_S:
+            gnss_s = self.epoch[0]
+
+        if self.time_source != 'device':
+            return host_time
+        if gnss_s is None:
+            source, reason = 'host', 'GNSS time unknown (no fix yet)'
+        elif abs(host_s - gnss_s) > self.gnss_time_tolerance:
+            source, reason = 'host', 'GNSS time is %.3f s from the host clock' % (gnss_s - host_s)
+        else:
+            source, reason = 'gnss', 'receive latency %.0f ms' % ((host_s - gnss_s) * 1e3)
+        if source != self.stamp_source:
+            self.get_logger().info('[timestamp] stamping with %s time: %s' % (source, reason))
+            self.stamp_source = source
+        if source == 'host':
+            return host_time
+        return rclpy.time.Time(seconds=gnss_s).to_msg()
 
     """Helper method for getting the frame_id with the correct TF prefix"""
     def get_frame_id(self):
